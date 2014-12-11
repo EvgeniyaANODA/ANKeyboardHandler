@@ -12,6 +12,7 @@
 
 @property (nonatomic, weak) UIScrollView* target;
 @property (nonatomic, strong) UITapGestureRecognizer* tapRecognizer;
+@property (nonatomic, assign) BOOL isKeyboardShown; //sometimes IOS send unbalanced show/hide notifications
 
 @end
 
@@ -20,7 +21,7 @@
 + (instancetype)handlerWithTarget:(id)target
 {
     NSAssert([target isKindOfClass:[UIScrollView class]],
-    @"You can't handle keyboard on class %@\n It must me UIScrollView subclass", NSStringFromClass([target class]));
+             @"You can't handle keyboard on class %@\n It must me UIScrollView subclass", NSStringFromClass([target class]));
     
     ANKeyboardHandler* instance = [ANKeyboardHandler new];
     instance.target = target;
@@ -51,29 +52,63 @@
 
 - (void)keyboardWillShow:(NSNotification*)aNotification
 {
-    [self handleKeyboardWithNotification:aNotification visible:YES];
+    if (!self.isKeyboardShown)
+    {
+        self.isKeyboardShown = YES;
+        [self handleKeyboardWithNotification:aNotification];
+    }
 }
 
 - (void)keyboardWillHide:(NSNotification*)aNotification
 {
-    [self handleKeyboardWithNotification:aNotification visible:NO];
+    if (self.isKeyboardShown)
+    {
+        self.isKeyboardShown = NO;
+        [self handleKeyboardWithNotification:aNotification];
+    }
 }
 
-- (void)handleKeyboardWithNotification:(NSNotification*)aNotification visible:(BOOL)isVisible
+- (UIView *)findViewThatIsFirstResponderInParent:(UIView*)parent
+{
+    if (parent.isFirstResponder)
+    {
+        return parent;
+    }
+    
+    for (UIView *subView in parent.subviews)
+    {
+        UIView *firstResponder = [self findViewThatIsFirstResponderInParent:subView];
+        if (firstResponder != nil)
+        {
+            return firstResponder;
+        }
+    }
+    
+    return nil;
+}
+
+- (void)handleKeyboardWithNotification:(NSNotification*)aNotification
 {
     NSDictionary* info = [aNotification userInfo];
     CGFloat kbHeight = [[info objectForKey:UIKeyboardFrameBeginUserInfoKey] CGRectValue].size.height;
     CGFloat duration = [info[UIKeyboardAnimationDurationUserInfoKey] floatValue];
-    kbHeight = isVisible ? kbHeight : -kbHeight;
+    kbHeight = self.isKeyboardShown ? kbHeight : -kbHeight;
+    
+    UIView* responder = [self findViewThatIsFirstResponderInParent:self.target];
     
     [UIView animateWithDuration:duration animations:ANMainQueueBlockFromCompletion(^{
-       
+        
         UIEdgeInsets contentInsets = UIEdgeInsetsMake(self.target.contentInset.top,
                                                       0.0,
                                                       self.target.contentInset.bottom + kbHeight,
                                                       0.0);
         self.target.contentInset = contentInsets;
         self.target.scrollIndicatorInsets = contentInsets;
+        if (responder)
+        {
+            [self.target scrollRectToVisible:[self.target convertRect:responder.frame fromView:responder.superview]
+                                    animated:NO];
+        }
     })];
 }
 
