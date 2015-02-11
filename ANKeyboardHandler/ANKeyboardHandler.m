@@ -9,7 +9,11 @@
 #import "ANHelperFunctions.h"
 
 @interface ANKeyboardHandler ()
-
+{
+    struct {
+        BOOL shouldNotifityKeyboardState : YES;
+    } _delegateExistingMethods;
+}
 @property (nonatomic, weak) UIScrollView* target;
 @property (nonatomic, strong) UITapGestureRecognizer* tapRecognizer;
 @property (nonatomic, assign) BOOL isKeyboardShown; //sometimes IOS send unbalanced show/hide notifications
@@ -29,14 +33,37 @@
     return instance;
 }
 
+- (instancetype)init
+{
+    self = [super init];
+    if (self)
+    {
+        self.handleKeyboard = YES;
+    }
+    return self;
+}
+
+- (void)setEventHandler:(id<ANKeyboardEventHandler>)eventHandler
+{
+    _eventHandler = eventHandler;
+    
+}
+
 - (void)setupKeyboard
 {
     self.tapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(hideKeyboard)];
     [self.target addGestureRecognizer:self.tapRecognizer];
     self.tapRecognizer.cancelsTouchesInView = NO;
     
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardWillShow:) name:UIKeyboardWillShowNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardWillHide:) name:UIKeyboardWillHideNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(keyboardWillShow:)
+                                                 name:UIKeyboardWillShowNotification
+                                               object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(keyboardWillHide:)
+                                                 name:UIKeyboardWillHideNotification
+                                               object:nil];
 }
 
 - (void)prepareForDie
@@ -102,14 +129,26 @@
                                                       0.0,
                                                       self.target.contentInset.bottom + kbHeight,
                                                       0.0);
-        self.target.contentInset = contentInsets;
-        self.target.scrollIndicatorInsets = contentInsets;
-        if (responder)
+        if (self.handleKeyboard)
         {
-            [self.target scrollRectToVisible:[self.target convertRect:responder.frame fromView:responder.superview]
-                                    animated:NO];
+            self.target.contentInset = contentInsets;
+            self.target.scrollIndicatorInsets = contentInsets;
+            if (responder)
+            {
+                [self.target scrollRectToVisible:[self.target convertRect:responder.frame fromView:responder.superview]
+                                        animated:NO];
+            }
         }
-    })];
+        if (self.animationBlock)
+        {
+            self.animationBlock(kbHeight);
+        }
+    }) completion:^(BOOL finished) {
+        if (self.animationCompletion)
+        {
+            self.animationCompletion(self.isKeyboardShown);
+        }
+    }];
 }
 
 - (void)hideKeyboard
